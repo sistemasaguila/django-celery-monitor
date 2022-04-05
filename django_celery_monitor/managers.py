@@ -21,20 +21,16 @@ class ExtendedQuerySet(models.QuerySet):
         Return a tuple (object, created), where created is a boolean
         specifying whether an object was created.
 
-        This is a backport from Django 1.11
-        (https://code.djangoproject.com/ticket/26804) to support
         select_for_update when getting the object.
         """
         defaults = defaults or {}
         self._for_write = True
         with transaction.atomic(using=self.db):
-            try:
-                obj = self.select_for_update().get(**kwargs)
-            except self.model.DoesNotExist:
-                params = self._extract_model_params(defaults, **kwargs)
-                obj, created = self._create_object_from_params(kwargs, params, lock=True)
-                if created:
-                    return obj, created
+            # Lock the row so that a concurrent update is blocked until
+            # update_or_create() has performed its save.
+            obj, created = self.select_for_update().get_or_create(defaults, **kwargs)
+            if created:
+                return obj, created
             for k, v in defaults.items():
                 setattr(obj, k, v() if callable(v) else v)
             obj.save(using=self.db)
